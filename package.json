@@ -1,0 +1,12 @@
+{
+  "name": "simplehttpserver",
+  "version": "1.0.0",
+  "description": "A very simple http server",
+  "main": "simpleHTTPserver.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Said Kökçam",
+  "license": "ISC"
+}
