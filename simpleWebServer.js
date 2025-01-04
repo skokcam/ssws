@@ -66,8 +66,6 @@ class simpleWebServer {
         this.cors = [];
         this.httpServer = null;
         this.httpsServer = null;
-        //this.httpServer.on('request', this.requestHandler);
-        //this.httpsServer.on('request', this.requestHandler);
     }
 
     requestHandler = (request, response) => {
