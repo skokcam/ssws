@@ -1,6 +1,15 @@
-const {simpleHTTPserver, mimeTypes} = require('../simpleHTTPserver');
+const {simpleWebServer, mimeTypes} = require('../simpleWebServer');
 
-const ws = new simpleHTTPserver();
+const Config = {
+    host: 'localhost',
+    httpPort: 8080,
+    httpsPort: 8443,
+    sslCert: null,
+    sslKey: null,
+    sslCA: null,
+}
+
+const ws = new simpleWebServer(Config);
 
 const simpleRoute = async (request, response) => {
     const text_data = "Welcome to Super Simple Web Server\n"
@@ -11,4 +20,4 @@ const simpleRoute = async (request, response) => {
 }
 
 ws.addRoute("GET", "/", simpleRoute);
-ws.start(8001);
+ws.start();

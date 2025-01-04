@@ -1,8 +1,8 @@
 {
-  "name": "simplehttpserver",
+  "name": "simplewebserver",
   "version": "1.0.0",
   "description": "A very simple http server",
-  "main": "simpleHTTPserver.js",
+  "main": "simpleWebServer.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

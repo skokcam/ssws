@@ -3,10 +3,15 @@ const url = require("node:url");
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const querystring = require('node:querystring');
+const { isSharedArrayBuffer } = require("node:util/types");
 
 const defaultConfig = {
     host: 'localhost',
-    port: 8080,
+    httpPort: 8080,
+    httpsPort: 8443,
+    sslCert: null,
+    sslKey: null,
+    sslCA: null,
     documentRoot: path.join(process.cwd(), '/docs'),
     defaultFile: "index.html",
     enableDirList: true,
@@ -49,59 +54,68 @@ function fetchHeader(request, headerName) {
     return headerContent;
 }
 
-class simpleHTTPserver {
+
+class simpleWebServer {
+    /**
+     * @param {object} config {host, httpPort, httpsPort, sslCert, sslKey, sslCA, documentRoot, defaultFile, enableDirList, notFoundHTML}
+     */
     constructor(config) {
         this.config = defaultConfig;
         this.setConfig(config);
-        this.server = http.createServer();
         this.routes = [];
         this.cors = [];
-
-        this.server.on('request', (request, response) => {
-            const reqPath = querystring.unescape(url.parse(request.url).pathname);            
-            let requestRouted = false;
-            let body = [];
-            
-            // check for cors
-            for (let entry of this.cors) {                
-                if (entry.host.toLowerCase() === "*" ||
-                    entry.host.toLowerCase() === request.headers.host.toLowerCase() ) {
-                    // emit cors headers if a match found
-                    response.setHeader('Access-Control-Allow-Origin', entry.host);
-                    response.setHeader('Access-Control-Allow-Methods', entry.methods);
-                    response.setHeader('Access-Control-Allow-Headers', entry.headers);
-                    break;
-                }
-            }
-            console.log(request.method, request.url);
-            // process request
-            request
-                .on('data', (chunk) => {
-                    body.push(chunk);
-                })
-                .on('end', () => {
-                    request.body = Buffer.concat(body).toString();                   
-                    //check endpoints
-                    for (let route of this.routes) {
-                    if (request.method === route.method && reqPath === route.path) {
-                        requestRouted = true;                        
-                        route.handler(request, response);
-                }
-            }    
-            if (!requestRouted) {
-                this.serveFile(request, response);
-            }             
-                })
-                .on('error', (err) => {
-                    console.log(err);
-                });
-            response
-                .on('error', (err) => {
-                    console.log(err);
-                });
-        });
+        this.httpServer = null;
+        this.httpsServer = null;
+        //this.httpServer.on('request', this.requestHandler);
+        //this.httpsServer.on('request', this.requestHandler);
     }
 
+    requestHandler = (request, response) => {
+        const reqPath = querystring.unescape(url.parse(request.url).pathname);
+        let requestRouted = false;
+        let body = [];
+
+        // check for cors
+        for (let entry of this.cors) {
+            if (entry.host.toLowerCase() === "*" ||
+                entry.host.toLowerCase() === request.headers.host.toLowerCase() ) {
+                // emit cors headers if a match found
+                response.setHeader('Access-Control-Allow-Origin', entry.host);
+                response.setHeader('Access-Control-Allow-Methods', entry.methods);
+                response.setHeader('Access-Control-Allow-Headers', entry.headers);
+                break;
+            }
+        }
+        console.log(request.method, request.url);
+        // process request
+        request
+            .on('data', (chunk) => {
+                body.push(chunk);
+            })
+            .on('end', () => {
+                request.body = Buffer.concat(body).toString();
+                //check endpoints
+                for (let route of this.routes) {
+                if (request.method === route.method && reqPath === route.path) {
+                    requestRouted = true;
+                    route.handler(request, response);
+            }
+        }
+        if (!requestRouted) {
+            this.serveFile(request, response);
+        }
+            })
+            .on('error', (err) => {
+                console.log(err);
+            });
+        response
+            .on('error', (err) => {
+                console.log(err);
+            });
+    }
+    /**
+     * @param   {object} config {host, httpPort, httpsPort, sslCert, sslKey, sslCA, documentRoot, defaultFile, enableDirList, notFoundHTML}
+     */
     setConfig = (config) => {
         //overwrite default config with options in config
         this.config = {...this.config, ...config};
@@ -110,7 +124,7 @@ class simpleHTTPserver {
     serveDirList = (request, response) => {
         const { documentRoot, notFoundHTML } = this.config;
         const dirPath = querystring.unescape(url.parse(request.url).pathname);
-    
+
         fs.readdir(path.join(documentRoot, dirPath), {withFileTypes: true})
         .then((dirEnts) => {
             let fileListHTML=`<html><title>Directory of ${encodeHTML(dirPath)}</title><body>`
@@ -128,26 +142,26 @@ class simpleHTTPserver {
             }
             fileListHTML += `</body></html>`
             response.statusCode = 200;
-            response.setHeader("Content-Type", mimeTypes['html']);        
-            response.end(fileListHTML);  
+            response.setHeader("Content-Type", mimeTypes['html']);
+            response.end(fileListHTML);
         })
         .catch((err) => {
             console.log(err);
             response.statusCode = 404;
-            response.setHeader("Content-Type", mimeTypes['html']);        
-            response.end(notFoundHTML); 
+            response.setHeader("Content-Type", mimeTypes['html']);
+            response.end(notFoundHTML);
         });
     };
-    
+
     serveDefaultFile = (request, response) => {
         const { documentRoot, defaultFile, notFoundHTML, enableDirList } = this.config;
-        const dirPath = querystring.unescape(url.parse(request.url).pathname);        
-    
+        const dirPath = querystring.unescape(url.parse(request.url).pathname);
+
         fs.readFile(path.join(documentRoot, dirPath, defaultFile))
         .then(content => {
             response.statusCode = 200;
-            response.setHeader("Content-Type", mimeTypes['html']);        
-            response.end(content);    
+            response.setHeader("Content-Type", mimeTypes['html']);
+            response.end(content);
         })
         .catch((err) => {
             //check for no such file err.errno=-2 || err.code='ENOENT'
@@ -156,24 +170,24 @@ class simpleHTTPserver {
             } else {
                 console.log("Error: ", err);
                 response.statusCode = 404;
-                response.setHeader("Content-Type", mimeTypes['html']);        
+                response.setHeader("Content-Type", mimeTypes['html']);
                 response.end(notFoundHTML);
-            }    
+            }
         });
     };
-    
+
     serveFile = (request, response) => {
-        const { documentRoot, notFoundHTML } = this.config; 
+        const { documentRoot, notFoundHTML } = this.config;
         const filePath = querystring.unescape(url.parse(request.url).pathname);
         const fileExt = path.extname(filePath).slice(1);
         let mimeType = mimeTypes[fileExt];
-        mimeType = mimeType || mimeTypes["txt"]; //not found ? use txt    
-    
+        mimeType = mimeType || mimeTypes["txt"]; //not found ? use txt
+
         fs.readFile(path.join(documentRoot, filePath))
         .then(content => {
             response.statusCode = 200;
-            response.setHeader("Content-Type", mimeType);        
-            response.end(content);    
+            response.setHeader("Content-Type", mimeType);
+            response.end(content);
         })
         .catch((err) => {
             //check for directory err.errno=-21 || err.code='EISDIR'
@@ -182,20 +196,30 @@ class simpleHTTPserver {
             } else {
                 console.log("Error: ", err);
                 response.statusCode = 404;
-                response.setHeader("Content-Type", mimeTypes['html']);        
+                response.setHeader("Content-Type", mimeTypes['html']);
                 response.end(notFoundHTML);
-            }    
+            }
         });
     };
-    
+
+    /**
+     * @param   {string} host hostname
+     * @param   {string} methods default: "POST, GET, OPTIONS"
+     * @param   {string} headers default: "*"
+     */
     addCors = (host, methods = "POST, GET, OPTIONS", headers = "*") => {
         this.cors.push({host, methods, headers});
     }
 
+    /**
+     * @param   {string} method GET, PUT, POST,
+     * @param   {string} path eg: /, /print
+     * @param   {callback} handler handler function = (req, res) => {}
+     */
     addRoute = (method, path, handler) => {
         if (methods.filter((m) => m === method).length === 0) {
             throw(`Unknown method ${method} !\nSupported methods are: ${methods}`);
-        }        
+        }
         if (typeof(path) !== "string") {
             throw("Path is not string !");
         }
@@ -209,33 +233,59 @@ class simpleHTTPserver {
         }
         this.routes.push({method, path, handler});
     };
-          
-    start = (listenPort, listenHost) => {
-        if (listenPort) {
-            this.config.port = listenPort;
-            this.config.host = listenHost;
+
+    /**
+     * @param   {number} http_port set 0 to disable
+     * @param   {number} https_port set 0 to disable
+     * @param   {string} ifHostName hostname of the interface to bind
+     */
+    start = (http_port, https_port, ifHostName) => {
+        if ( http_port >= 0 ) {this.config.httpPort = http_port};
+        if ( https_port >= 0 ) {this.config.httpsPort = https_port};
+        if ( ifHostName && ifHostName.length >= 0 ) {this.config.host = ifHostName};
+        let {httpPort, httpsPort, host} = this.config;
+
+        (this.httpServer || this.httpServer) && this.stop(); //if already running, stop
+        if (httpPort) {
+            this.httpServer = http.createServer(this.requestHandler);
+            this.httpServer.listen(httpPort, host, () => {
+                console.log(`Server listening at http://${host}:${httpPort}`);
+            });
         }
-        const { host, port, documentRoot } = this.config;
-        this.server.listen(port, host, () => {
-            console.log(`Server listening at http://${host}:${port}`);
-            console.log(`Document root: ${documentRoot}`);
-        });    
+        if (this.config.sslCert && this.config.sslKey && httpsPort) {
+            const https = require('node:https');
+            let sslOptions = {
+                key: this.config.sslKey,
+                cert: this.config.sslCert,
+                ca: this.config.sslCA,
+            };
+            this.httpsServer = https.createServer(sslOptions, this.requestHandler);
+            this.httpsServer.listen(httpsPort, host, () => {
+                console.log(`Server listening at https://${host}:${httpsPort}`);
+            });
+        }
+        console.log(`Document root: ${this.config.documentRoot}`);
     };
 
     stop = () => {
-        const { host, port } = this.config;
-        if (this.server.listening) {
-            this.server.close(() => {
-                console.log(`Closed server at http://${host}:${port}`);
+        const { host, httpPort, httpsPort} = this.config;
+        if (this.httpServer) {
+            this.httpServer.close(() => {
+                console.log(`Closed server at http://${host}:${httpPort}`);
+                this.httpServer = null;
             });
-        } else {
-            console.log("Server not started !");
-        } 
+        }
+        if (this.httpsServer) {
+            this.httpsServer.close(() => {
+                console.log(`Closed server at https://${host}:${httpsPort}`);
+                this.httpsServer = null;
+            });
+        }
     };
 }
 
 module.exports = {
-    simpleHTTPserver,
+    simpleWebServer,
     mimeTypes,
     encodeHTML,
     decodeHTML,
